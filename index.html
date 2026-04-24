@@ -302,10 +302,9 @@ select option{background:var(--bg2);color:var(--text)}
       <div class="fg"><label>Unidad</label><input type="text" id="mpUni" placeholder="L, kg, uds"/></div>
       <div class="fg"><label>Paso consumo</label><input type="number" id="mpPaso" placeholder="1" min="0.01" step="any"/></div>
     </div>
-    <div class="frow3">
+    <div class="frow">
       <div class="fg"><label>Stock actual</label><input type="number" id="mpActual" placeholder="0" step="any"/></div>
-      <div class="fg"><label>Mínimo</label><input type="number" id="mpMin" placeholder="0" step="any"/></div>
-      <div class="fg"><label>Máximo</label><input type="number" id="mpMax" placeholder="0" step="any"/></div>
+      <div class="fg"><label>Stock mínimo</label><input type="number" id="mpMin" placeholder="0" step="any"/></div>
     </div>
     <div class="fg"><label>Categoría</label><select id="mpCat"><option value="">Sin categoría</option></select></div>
     <div class="fg">
@@ -395,28 +394,54 @@ select option{background:var(--bg2);color:var(--text)}
     </div>
     <div class="slbl">Inventario</div>
     <button class="btn-s" style="margin-top:0" onclick="cerrar('mOpciones');setTimeout(()=>abrirCats(),200)">🗂 Gestionar categorías</button>
+    <div class="slbl">Exportar / Importar</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn-s" style="margin-top:0" onclick="exportarJSON()">⬇ Exportar .json</button>
+      <button class="btn-s" style="margin-top:0" onclick="document.getElementById('jsonInput').click()">⬆ Importar .json</button>
+    </div>
+    <input type="file" id="jsonInput" accept=".json" style="display:none" onchange="importarJSON(event)"/>
+    <button class="btn-s" style="margin-top:6px" onclick="cerrar('mOpciones');abrirImportPedidos()">📥 Importar desde PedidOS</button>
     <div class="slbl">Conexión PedidOS</div>
-    <p style="font-size:12px;color:var(--text3);margin-bottom:6px;line-height:1.6">Los productos bajo mínimo con categoría de PedidOS asignada se añaden automáticamente cuando tocas "→ PedidOS" o "Añadir todos".</p>
-    <div class="ver">StockOS v1.0.0</div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:6px;line-height:1.6">Los productos bajo mínimo con categoría de PedidOS asignada se añaden cuando tocas "→ PedidOS".</p>
+    <div class="ver">StockOS v1.1.0</div>
     <button class="btn-s" onclick="cerrar('mOpciones')" style="margin-top:14px">Cerrar</button>
   </div>
 </div>
 
-<!-- ══ Consumo popup ══ -->
-<div id="popupConsumo" style="display:none">
+<!-- ══ Popup: Consumir / Añadir stock ══ -->
+<div id="popupConsumo" style="display:none;position:fixed;z-index:400;background:var(--bg2);border:1px solid var(--border2);border-radius:18px;padding:18px 16px 16px;min-width:250px;max-width:310px;box-shadow:0 16px 48px rgba(0,0,0,.7);animation:popIn .15s ease">
   <button onclick="cerrarPopup()" style="position:absolute;top:8px;right:10px;background:none;border:none;cursor:pointer;font-size:15px;color:var(--text3)">✕</button>
   <div class="popup-name" id="popNombre"></div>
   <div class="popup-stock" id="popStock"></div>
+
+  <!-- Mode toggle -->
+  <div style="display:flex;gap:4px;margin-bottom:14px;background:var(--bg3);border-radius:8px;padding:3px">
+    <button id="modeConsumir" onclick="setPopMode('consumir')" style="flex:1;padding:6px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;background:var(--red);color:#fff;transition:all .15s">− Consumir</button>
+    <button id="modeAnadir"   onclick="setPopMode('anadir')"   style="flex:1;padding:6px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:'Outfit',sans-serif;background:transparent;color:var(--text3);transition:all .15s">+ Añadir</button>
+  </div>
+
   <div class="popup-row">
     <button class="pop-btn minus" onclick="popCambiar(-1)">−</button>
     <div class="pop-val" id="popVal">0</div>
-    <button class="pop-btn plus" onclick="popCambiar(+1)">+</button>
+    <button class="pop-btn plus"  onclick="popCambiar(+1)">+</button>
   </div>
   <div class="pop-unit" id="popUnit"></div>
   <input class="pop-nota" id="popNota" placeholder="Nota opcional..."/>
   <div class="pop-actions">
-    <button class="pop-save" onclick="guardarConsumo()">✓ Registrar</button>
+    <button class="pop-save" id="popSaveBtn" onclick="guardarMovimiento()">✓ Registrar consumo</button>
     <button class="pop-close" onclick="cerrarPopup()">Cancelar</button>
+  </div>
+</div>
+
+<!-- ══ Modal: Importar desde PedidOS ══ -->
+<div class="overlay hidden" id="mImportPedidos">
+  <div class="modal">
+    <div class="mhandle"></div>
+    <h2>📥 Importar desde PedidOS</h2>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.6">Selecciona los productos de tu lista PedidOS para importarlos al inventario. Luego configura el mínimo y unidades.</p>
+    <div id="pedidosImportList" style="max-height:300px;overflow-y:auto"></div>
+    <button class="btn-p" style="margin-top:12px" onclick="confirmarImportPedidos()">✓ Importar seleccionados</button>
+    <button class="btn-s" onclick="cerrar('mImportPedidos')">Cancelar</button>
   </div>
 </div>
 
@@ -435,8 +460,7 @@ let invCats = [], invProds = [], pedCats = [];
 let histHoy = [];
 let filtro = 'todos';
 let colapsadas = new Set();
-let popProductoId = null, popValor = 0;
-let _popTimer = null;
+let popProductoId = null, popValor = 0, popMode = 'consumir';
 
 // ── SUPABASE ──
 const hdrs = t => ({
@@ -594,8 +618,9 @@ function nivelColor(p) {
 }
 
 function pct(p) {
-  if (!p.stock_maximo || p.stock_maximo===0) return Math.min((p.stock_actual/(p.stock_minimo||1))*100, 100);
-  return Math.min((p.stock_actual/p.stock_maximo)*100, 100);
+  if (!p.stock_minimo || p.stock_minimo===0) return 100;
+  // Show as % of double the minimum (so at minimum = 50%, above = green zone)
+  return Math.min((p.stock_actual/(p.stock_minimo*2))*100, 100);
 }
 
 function fmtNum(n) {
@@ -677,32 +702,50 @@ const setFiltro = (f,btn) => { filtro=f; document.querySelectorAll('.ntab').forE
 const toggleCat = id => { colapsadas.has(id)?colapsadas.delete(id):colapsadas.add(id); renderLista(); };
 
 // ══════════════════════════════════════════════════════════
-// POPUP CONSUMO
+// POPUP — CONSUMIR / AÑADIR STOCK
 // ══════════════════════════════════════════════════════════
 function abrirPopup(id, evt) {
   evt.stopPropagation();
   const p = invProds.find(x=>x.id===id); if(!p) return;
-  popProductoId = id;
-  popValor = 0;
+  popProductoId = id; popValor = 0; popMode = 'consumir';
   document.getElementById('popNombre').textContent = p.nombre;
-  document.getElementById('popStock').textContent  = `Stock actual: ${fmtNum(p.stock_actual)} ${p.unidad||'uds'}`;
+  document.getElementById('popStock').textContent  = `Stock: ${fmtNum(p.stock_actual)} ${p.unidad||'uds'}`;
   document.getElementById('popUnit').textContent   = `paso: ${fmtNum(p.paso||1)} ${p.unidad||'uds'}`;
   document.getElementById('popNota').value         = '';
   actualizarPopVal();
+  setPopMode('consumir');
 
   const popup = document.getElementById('popupConsumo');
   popup.style.display = 'block';
   const sw=window.innerWidth, sh=window.innerHeight;
-  const pw=popup.offsetWidth||260, ph=popup.offsetHeight||220;
+  const pw=popup.offsetWidth||270, ph=popup.offsetHeight||240;
   let top=(evt.clientY||200)-20, left=(evt.clientX||sw/2)-pw/2;
   top  = Math.max(8, Math.min(top,  sh-ph-8));
   left = Math.max(8, Math.min(left, sw-pw-8));
   popup.style.top=top+'px'; popup.style.left=left+'px';
 }
 
+function setPopMode(mode) {
+  popMode = mode; popValor = 0; actualizarPopVal();
+  const btnC = document.getElementById('modeConsumir');
+  const btnA = document.getElementById('modeAnadir');
+  const saveBtn = document.getElementById('popSaveBtn');
+  if (mode === 'consumir') {
+    btnC.style.cssText = 'flex:1;padding:6px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:Outfit,sans-serif;background:var(--red);color:#fff;transition:all .15s';
+    btnA.style.cssText = 'flex:1;padding:6px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:Outfit,sans-serif;background:transparent;color:var(--text3);transition:all .15s';
+    saveBtn.textContent = '✓ Registrar consumo';
+    saveBtn.style.background = 'var(--red)';
+  } else {
+    btnA.style.cssText = 'flex:1;padding:6px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:Outfit,sans-serif;background:var(--teal);color:var(--bg);transition:all .15s';
+    btnC.style.cssText = 'flex:1;padding:6px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;font-family:Outfit,sans-serif;background:transparent;color:var(--text3);transition:all .15s';
+    saveBtn.textContent = '✓ Añadir al stock';
+    saveBtn.style.background = 'var(--teal)';
+  }
+}
+
 function actualizarPopVal() {
-  const p = invProds.find(x=>x.id===popProductoId); if(!p) return;
   document.getElementById('popVal').textContent = fmtNum(popValor);
+  document.getElementById('popVal').style.color = popMode==='consumir' ? 'var(--red)' : 'var(--teal)';
 }
 
 function popCambiar(dir) {
@@ -712,25 +755,30 @@ function popCambiar(dir) {
   actualizarPopVal();
 }
 
-async function guardarConsumo() {
+async function guardarMovimiento() {
   if (!popProductoId || popValor===0) { toast('Introduce una cantidad'); return; }
   const p    = invProds.find(x=>x.id===popProductoId); if(!p) return;
   const nota = document.getElementById('popNota').value.trim();
   const hoy  = new Date().toISOString().slice(0,10);
+  const esConsumo = popMode === 'consumir';
 
-  // Actualizar stock localmente
-  const nuevoStock = Math.max(0, Math.round((Number(p.stock_actual)-popValor)*1000)/1000);
+  // Calcular nuevo stock
+  let nuevoStock;
+  if (esConsumo) nuevoStock = Math.max(0, Math.round((Number(p.stock_actual)-popValor)*1000)/1000);
+  else           nuevoStock = Math.round((Number(p.stock_actual)+popValor)*1000)/1000;
+
   p.stock_actual = nuevoStock;
   cerrarPopup();
   renderLista();
 
   try {
-    // Registrar consumo
+    // Registrar en historial — cantidad negativa = consumo, positiva = entrada
+    const cantidadHist = esConsumo ? -popValor : popValor;
     const res = await POST('inv_consumo', {
       user_id:     sesion.user.id,
       producto_id: p.id,
-      cantidad:    popValor,
-      nota,
+      cantidad:    cantidadHist,
+      nota:        nota || (esConsumo ? 'Consumo' : 'Entrada de stock'),
       fecha:       hoy
     }, tok());
     histHoy.unshift(Array.isArray(res)?res[0]:res);
@@ -738,11 +786,10 @@ async function guardarConsumo() {
     // Actualizar stock en BD
     await PATCH(`inv_productos?id=eq.${p.id}`, { stock_actual: nuevoStock, updated_at: new Date().toISOString() }, tok());
 
-    toast(`✓ −${fmtNum(popValor)} ${p.unidad||'uds'} registrado`);
+    const signo = esConsumo ? '−' : '+';
+    toast(`✓ ${signo}${fmtNum(popValor)} ${p.unidad||'uds'} · stock: ${fmtNum(nuevoStock)}`);
     renderLista();
-  } catch(e) {
-    toast('Error al guardar'); await cargarDatos();
-  }
+  } catch(e) { toast('Error al guardar'); await cargarDatos(); }
 }
 
 function cerrarPopup() {
@@ -765,7 +812,6 @@ function abrirFormProducto() {
   document.getElementById('mpPaso').value='1';
   document.getElementById('mpActual').value='0';
   document.getElementById('mpMin').value='0';
-  document.getElementById('mpMax').value='0';
   document.getElementById('mpCat').value='';
   document.getElementById('mpPedCat').value='';
   abrir('mProducto');
@@ -781,7 +827,6 @@ function editarProd(id) {
   document.getElementById('mpPaso').value=p.paso??1;
   document.getElementById('mpActual').value=p.stock_actual??0;
   document.getElementById('mpMin').value=p.stock_minimo??0;
-  document.getElementById('mpMax').value=p.stock_maximo??0;
   document.getElementById('mpCat').value=p.categoria_id||'';
   document.getElementById('mpPedCat').value=p.pedidos_cat_id||'';
   document.getElementById('mpNotas').value=p.notas||'';
@@ -798,7 +843,6 @@ async function guardarProducto() {
     paso:           parseFloat(document.getElementById('mpPaso').value)||1,
     stock_actual:   parseFloat(document.getElementById('mpActual').value)||0,
     stock_minimo:   parseFloat(document.getElementById('mpMin').value)||0,
-    stock_maximo:   parseFloat(document.getElementById('mpMax').value)||0,
     categoria_id:   document.getElementById('mpCat').value||null,
     pedidos_cat_id: document.getElementById('mpPedCat').value||null,
     auto_pedido:    true,
@@ -910,7 +954,7 @@ function abrirFaltan() {
     document.getElementById('btnEnviarTodos').style.display='block';
     list.innerHTML = faltan.map(p => {
       const col    = nivelColor(p);
-      const faltan_qty = Math.max(0, p.stock_maximo>0 ? p.stock_maximo-p.stock_actual : p.stock_minimo*2-p.stock_actual);
+      const faltan_qty = Math.max(0, p.stock_minimo*2 - p.stock_actual);
       const yaPedido = p._pedidoId;
       return `<div class="falta-card">
         <div class="falta-dot ${col==='warn'?'warn':''}"></div>
@@ -931,7 +975,7 @@ async function enviarAPedidos(prodId, btn) {
   const p = invProds.find(x=>x.id===prodId); if(!p) return;
   if (!p.pedidos_cat_id) { toast('Este producto no tiene categoría de PedidOS asignada. Edítalo primero.'); return; }
 
-  const faltan_qty = Math.max(1, p.stock_maximo>0 ? p.stock_maximo-p.stock_actual : p.stock_minimo-p.stock_actual);
+  const faltan_qty = Math.max(1, p.stock_minimo*2 - p.stock_actual);
 
   try {
     await POST('productos', {
@@ -986,7 +1030,7 @@ function generarTextoFaltan() {
     const k   = cat?.nombre||'Sin categoría';
     const ico = cat?.icono||'📦';
     if(!g[k]) g[k]={ico,items:[]};
-    const falta_qty = Math.max(0, p.stock_maximo>0?p.stock_maximo-p.stock_actual:p.stock_minimo*2-p.stock_actual);
+    const falta_qty = Math.max(0, p.stock_minimo*2 - p.stock_actual);
     g[k].items.push(`• ${p.nombre} — ~${fmtNum(falta_qty)} ${p.unidad} (tiene ${fmtNum(p.stock_actual)})`);
   });
   Object.entries(g).forEach(([k,v])=>{ txt+=`${v.ico} *${k}*\n${v.items.join('\n')}\n\n`; });
@@ -1015,21 +1059,182 @@ function abrirHistorial() {
     list.innerHTML='<div class="empty"><div class="empty-ico">📋</div><p>Sin consumo registrado hoy.</p></div>';
   } else {
     list.innerHTML = histHoy.map(h => {
-      const p = invProds.find(x=>x.id===h.producto_id);
+      const p    = invProds.find(x=>x.id===h.producto_id);
       const hora = new Date(h.created_at).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+      const qty  = Number(h.cantidad);
+      const esEntrada = qty > 0;
       return `<div class="hist-item">
         <div>
           <div class="hist-name">${esc(p?.nombre||'Producto')}</div>
           ${h.nota?`<div class="hist-nota">${esc(h.nota)}</div>`:''}
         </div>
         <div style="text-align:right">
-          <div class="hist-qty">−${fmtNum(h.cantidad)} ${p?.unidad||''}</div>
+          <div class="hist-qty" style="color:${esEntrada?'var(--teal)':'var(--red)'}">${esEntrada?'+':''}${fmtNum(qty)} ${p?.unidad||''}</div>
           <div class="hist-time">${hora}</div>
         </div>
       </div>`;
     }).join('');
   }
   abrir('mHistorial');
+}
+
+// ══════════════════════════════════════════════════════════
+// EXPORTAR / IMPORTAR JSON
+// ══════════════════════════════════════════════════════════
+function exportarJSON() {
+  const data = {
+    version:    '1.1',
+    exportado:  new Date().toISOString(),
+    categorias: invCats.map(c => ({
+      nombre: c.nombre, icono: c.icono||'📦', color: c.color||'#00c9a7', orden: c.orden??0
+    })),
+    productos: invProds.map(p => {
+      const cat    = invCats.find(c=>c.id===p.categoria_id);
+      const pedCat = pedCats.find(c=>c.id===p.pedidos_cat_id);
+      return {
+        nombre:        p.nombre,
+        unidad:        p.unidad||'uds',
+        paso:          p.paso??1,
+        stock_actual:  p.stock_actual??0,
+        stock_minimo:  p.stock_minimo??0,
+        categoria:     cat?.nombre||'',
+        pedidos_cat:   pedCat?.nombre||'',
+        notas:         p.notas||''
+      };
+    })
+  };
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a    = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: `stockos_${new Date().toISOString().slice(0,10)}.json`
+  });
+  a.click(); URL.revokeObjectURL(a.href);
+  toast(`⬇ Exportado: ${data.categorias.length} cats, ${data.productos.length} productos`);
+}
+
+async function importarJSON(evt) {
+  const file = evt.target.files[0]; if(!file) return;
+  evt.target.value='';
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { toast('❌ JSON inválido'); return; }
+  if (!data.productos) { toast('❌ Formato incorrecto'); return; }
+  toast('Importando...');
+
+  // Recargar cats frescas
+  try { invCats = await GET('inv_categorias?order=orden.asc', tok()); } catch {}
+  const norm   = s=>(s||'').trim().toLowerCase();
+  const catMap = {};
+  invCats.forEach(c=>{ catMap[norm(c.nombre)]=c.id; });
+
+  // Crear categorías nuevas
+  for (const c of (data.categorias||[])) {
+    const nombre=(c.nombre||'').trim(); if(!nombre) continue;
+    if (catMap[norm(nombre)]) continue;
+    try {
+      const r = await fetch(`${SB_URL}/rest/v1/inv_categorias`, {
+        method:'POST', headers:{...hdrs(tok()),'Prefer':'return=representation'},
+        body:JSON.stringify({nombre,icono:c.icono||'📦',color:c.color||'#00c9a7',orden:invCats.length,user_id:sesion.user.id})
+      });
+      if (r.ok) { const arr=await r.json(); const cat=Array.isArray(arr)?arr[0]:arr; if(cat?.id){invCats.push(cat);catMap[norm(nombre)]=cat.id;} }
+    } catch {}
+  }
+
+  // Mapa de cats PedidOS
+  const pedMap = {};
+  pedCats.forEach(c=>{ pedMap[norm(c.nombre)]=c.id; });
+
+  let added=0;
+  for (const p of data.productos) {
+    const nombre=(p.nombre||'').trim(); if(!nombre) continue;
+    try {
+      const res = await POST('inv_productos', {
+        nombre, unidad:p.unidad||'uds', paso:p.paso??1,
+        stock_actual:p.stock_actual??0, stock_minimo:p.stock_minimo??0,
+        categoria_id:   catMap[norm(p.categoria)]||null,
+        pedidos_cat_id: pedMap[norm(p.pedidos_cat)]||null,
+        notas:p.notas||'', auto_pedido:true,
+        orden:invProds.length, user_id:sesion.user.id
+      }, tok());
+      invProds.unshift(Array.isArray(res)?res[0]:res); added++;
+    } catch {}
+  }
+  poblarTabs(); poblarSelectCats(); renderLista();
+  toast(`✓ ${added} productos importados`);
+}
+
+// ══════════════════════════════════════════════════════════
+// IMPORTAR DESDE PEDIDOS
+// ══════════════════════════════════════════════════════════
+let pedidosParaImportar = [];
+
+async function abrirImportPedidos() {
+  abrir('mImportPedidos');
+  const list = document.getElementById('pedidosImportList');
+  list.innerHTML = '<div class="loading"><div class="spinner"></div> Cargando...</div>';
+  try {
+    // Cargar todos los productos de PedidOS del usuario
+    const prods = await GET('productos?order=created_at.desc', tok());
+    pedidosParaImportar = prods||[];
+
+    if (!pedidosParaImportar.length) {
+      list.innerHTML='<div class="empty"><div class="empty-ico">📋</div><p>Sin productos en PedidOS.</p></div>';
+      return;
+    }
+
+    // Filtrar los que ya no están en inventario
+    const yaEnInv = new Set(invProds.map(p=>p.nombre.toLowerCase()));
+
+    list.innerHTML = pedidosParaImportar.map((p,i) => {
+      const cat = pedCats.find(c=>c.id===p.categoria_id);
+      const yaExiste = yaEnInv.has(p.nombre.toLowerCase());
+      return `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+        <input type="checkbox" id="imp_${i}" value="${i}" ${yaExiste?'disabled':'checked'}
+          style="width:17px;height:17px;accent-color:var(--teal);flex-shrink:0"/>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:${yaExiste?'var(--text3)':'var(--text)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.nombre)}</div>
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">${cat?cat.icono+' '+cat.nombre:'Sin cat'}${yaExiste?' · ya en inventario':''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML=`<p style="color:var(--red);font-size:13px">Error: ${e.message}</p>`;
+  }
+}
+
+async function confirmarImportPedidos() {
+  const checks = document.querySelectorAll('#pedidosImportList input[type=checkbox]:checked:not(:disabled)');
+  if (!checks.length) { toast('Selecciona al menos uno'); return; }
+
+  cerrar('mImportPedidos');
+  toast('Importando...');
+  let added=0;
+
+  for (const chk of checks) {
+    const p = pedidosParaImportar[parseInt(chk.value)]; if(!p) continue;
+    // Buscar categoría de inventario que coincida con la de PedidOS
+    const pedCat = pedCats.find(c=>c.id===p.categoria_id);
+    const invCat = pedCat ? invCats.find(c=>c.nombre.toLowerCase()===pedCat.nombre.toLowerCase()) : null;
+    try {
+      const res = await POST('inv_productos', {
+        nombre:        p.nombre,
+        unidad:        p.unidad||'uds',
+        paso:          1,
+        stock_actual:  0,
+        stock_minimo:  0,
+        categoria_id:  invCat?.id||null,
+        pedidos_cat_id:p.categoria_id||null,
+        notas:         'Importado desde PedidOS',
+        auto_pedido:   true,
+        orden:         invProds.length,
+        user_id:       sesion.user.id
+      }, tok());
+      invProds.unshift(Array.isArray(res)?res[0]:res); added++;
+    } catch {}
+  }
+
+  poblarTabs(); renderLista();
+  toast(`✓ ${added} productos importados desde PedidOS — edítalos para configurar mínimos`);
 }
 
 // ══════════════════════════════════════════════════════════
